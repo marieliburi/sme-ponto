@@ -1,5 +1,9 @@
 // Cliente API para o Backend do Sistema de Ponto SME
-const BASE_URL = 'http://localhost:3000';
+// Configurado com o IP local do seu computador para acesso pelo celular via Wi-Fi
+const SERVER_IP = '192.168.0.123';
+const BASE_URL = typeof window !== 'undefined' && window.location && window.location.hostname && window.location.hostname !== 'localhost'
+  ? `http://${window.location.hostname}:3000`
+  : `http://${SERVER_IP}:3000`;
 
 let authToken = null;
 
