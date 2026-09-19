@@ -1,4 +1,4 @@
-# Sistema de Ponto SME - Secretaria Municipal de Educação
+# Sistema de Ponto SME - Estágio
 
 Sistema completo de controle de ponto eletrônico para estagiários da Rede Municipal de Ensino (SME), com autenticação biométrica via dispositivo móvel, validação de geolocalização por satélite (GPS), contador ativo em tempo real, espelho de ponto diário e envio de atestados/justificativas.
 
