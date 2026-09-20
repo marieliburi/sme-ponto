@@ -7,20 +7,22 @@ import {
   Image,
   TouchableOpacity,
   Alert,
-  RefreshControl
+  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { colors } from '../theme/colors';
 import ContadorAtivo from '../components/ContadorAtivo';
 import BotaoBiometria from '../components/BotaoBiometria';
 import CardPonto from '../components/CardPonto';
 import StatusBadge from '../components/StatusBadge';
-import { pontoService } from '../services/api';
 import { locationService } from '../services/locationService';
-import { bioService } from '../services/bioService';
+import { pontoService } from '../services/api';
 
 export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingInicial, setLoadingInicial] = useState(true);
+
   const [punchData, setPunchData] = useState({
     slots: [
       {
@@ -28,103 +30,155 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
         tipo: 'entrada',
         titulo: '1ª Batida • Entrada',
         subtitulo: 'SME Prédio Central',
-        horario: '08:00',
-        status: 'realizado',
-        gpsConfirmado: true
+        horario: '--:--',
+        status: 'pendente',
+        gpsConfirmado: false
       },
       {
         id: '2',
-        tipo: 'saida_almoco',
-        titulo: '2ª Batida • Saída Almoço',
-        subtitulo: 'Intervalo regulamentar',
-        horario: '12:00',
-        status: 'pendente',
-        gpsConfirmado: false
-      },
-      {
-        id: '3',
-        tipo: 'retorno_almoco',
-        titulo: '3ª Batida • Retorno Almoço',
-        subtitulo: 'Reinício do expediente',
-        horario: '13:00',
-        status: 'pendente',
-        gpsConfirmado: false
-      },
-      {
-        id: '4',
-        tipo: 'saida_final',
-        titulo: '4ª Batida • Saída Final',
-        subtitulo: 'Encerramento da jornada',
-        horario: '14:00',
+        tipo: 'saida',
+        titulo: '2ª Batida • Saída',
+        subtitulo: 'Encerramento da jornada (6h)',
+        horario: '--:--',
         status: 'pendente',
         gpsConfirmado: false
       }
     ],
-    proximoSlotLabel: '2ª Batida • Saída Almoço',
-    segundosTrabalhados: 12840, // aprox 3h 34m
-    primeiroRegistro: new Date(new Date().setHours(8, 0, 0, 0)).toISOString()
+    proximoSlotLabel: '1ª Batida • Entrada',
+    segundosTrabalhados: 0,
+    primeiroRegistro: null,
+    jornadaConcluida: false
   });
 
-  const carregarDadosHoje = async () => {
+  const sincronizarComServidor = async () => {
     try {
       const res = await pontoService.getPontosHoje();
-      if (res.success && res.slots) {
-        setPunchData({
-          slots: res.slots,
-          proximoSlotLabel: res.proximoSlotLabel,
-          segundosTrabalhados: res.segundosTrabalhados,
-          primeiroRegistro: res.primeiroRegistro
-        });
+      if (!res) return;
+
+      const registroHoje = Array.isArray(res) ? res[0] : (res.registro || res);
+      if (!registroHoje) return;
+
+      const { horario_entrada, horario_saida, duracao_segundos } = registroHoje;
+
+      const formatarHoraLocal = (isoStr) => {
+        if (!isoStr) return '--:--';
+        return new Date(isoStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      };
+
+      const temEntrada = !!horario_entrada;
+      const temSaida = !!horario_saida;
+
+      let segundos = duracao_segundos || 0;
+      if (temEntrada && !temSaida) {
+        const inicio = new Date(horario_entrada);
+        segundos = Math.max(0, Math.floor((new Date() - inicio) / 1000));
       }
-    } catch (e) {
-      console.warn('Usando dados demonstrativos de hoje:', e.message);
+
+      setPunchData({
+        slots: [
+          {
+            id: '1',
+            tipo: 'entrada',
+            titulo: '1ª Batida • Entrada',
+            subtitulo: 'SME Prédio Central',
+            horario: temEntrada ? formatarHoraLocal(horario_entrada) : '--:--',
+            status: temEntrada ? 'realizado' : 'pendente',
+            gpsConfirmado: temEntrada
+          },
+          {
+            id: '2',
+            tipo: 'saida',
+            titulo: '2ª Batida • Saída',
+            subtitulo: 'Encerramento da jornada (6h)',
+            horario: temSaida ? formatarHoraLocal(horario_saida) : '--:--',
+            status: temSaida ? 'realizado' : 'pendente',
+            gpsConfirmado: temSaida
+          }
+        ],
+        proximoSlotLabel: !temEntrada 
+          ? '1ª Batida • Entrada' 
+          : !temSaida 
+          ? '2ª Batida • Saída' 
+          : 'Jornada Concluída',
+        segundosTrabalhados: segundos,
+        primeiroRegistro: horario_entrada,
+        jornadaConcluida: temEntrada && temSaida
+      });
+    } catch (err) {
+      console.log('Erro ao sincronizar ponto:', err);
+    } finally {
+      setLoadingInicial(false);
     }
   };
 
   useEffect(() => {
-    carregarDadosHoje();
+    sincronizarComServidor();
   }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await carregarDadosHoje();
+    await sincronizarComServidor();
     setRefreshing(false);
   };
 
   const handleBaterPonto = async () => {
+    if (punchData.jornadaConcluida) {
+      Alert.alert('Jornada Concluída', 'Você já registrou a Entrada e a Saída de hoje.');
+      return;
+    }
+
     try {
       setLoading(true);
 
-      // 1. Captura GPS
-      const loc = await locationService.getCurrentLocation();
-
-      // 2. Validação Biométrica
-      const bio = await bioService.autenticarBiometria('Confirme sua digital para registrar o ponto');
-      if (!bio.sucesso) {
-        Alert.alert('Falha', 'Não foi possível confirmar a biometria.');
-        return;
+      // 1. Obtém dados de GPS
+      let loc = { latitude: 0, longitude: 0 };
+      try {
+        const gps = await locationService.getCurrentLocation();
+        if (gps) {
+          loc = { latitude: gps.latitude, longitude: gps.longitude };
+        }
+      } catch (err) {
+        console.warn('GPS não obtido, enviando valores zerados:', err);
       }
 
-      // 3. Envia batida ao backend
-      const res = await pontoService.registrarPonto({
+      const tipoRegistro = !punchData.primeiroRegistro ? 'ENTRADA' : 'SAIDA';
+
+      // 2. Envio direto para o backend (Sem biometria)
+      const resposta = await pontoService.registrarPonto({
+        usuario_id: usuario?.id,
+        tipo: tipoRegistro,
         latitude: loc.latitude,
-        longitude: loc.longitude,
-        localizacao_nome: loc.localizacao_nome,
-        tipo_autenticacao: 'biometria'
+        longitude: loc.longitude
       });
 
-      Alert.alert('Sucesso!', res.message || 'Ponto registrado e autenticado com sucesso!');
-      await carregarDadosHoje();
+      // Recarrega os dados do banco para atualizar a interface
+      await sincronizarComServidor();
+
+      Alert.alert('Sucesso!', resposta?.mensagem || `Ponto de ${tipoRegistro.toLowerCase()} registrado!`);
     } catch (error) {
-      Alert.alert('Erro ao bater ponto', error.message || 'Falha ao registrar batida.');
+      console.error('Erro ao bater ponto:', error);
+      Alert.alert('Erro no Servidor', error?.response?.data?.mensagem || error.message || 'Falha ao salvar o ponto no banco.');
     } finally {
       setLoading(false);
     }
   };
 
+  const hoje = new Date();
+  const diaSemana = hoje.toLocaleDateString('pt-BR', { weekday: 'long' });
+  const diaEMes = hoje.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+  const dataFormatada = diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1);
+
+  if (loadingInicial) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Carregando sistema...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
-      {/* Top Header Bar */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
           <Image
@@ -144,8 +198,8 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
 
         <View style={styles.headerRight}>
           <View style={styles.userInfoTextCol}>
-            <Text style={styles.userName}>{usuario?.nome || 'Lucas Ferreira'}</Text>
-            <Text style={styles.userRole}>{usuario?.cargo || 'Estagiário de TI'}</Text>
+            <Text style={styles.userName}>{usuario?.nome || 'Servidor SME'}</Text>
+            <Text style={styles.userRole}>{usuario?.cargo || 'Estagiário'}</Text>
           </View>
           <Image
             source={{
@@ -164,79 +218,31 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Date and Daily Status Banner */}
         <View style={styles.dateRow}>
           <View>
-            <Text style={styles.dateLabel}>Hoje, Quinta-feira</Text>
-            <Text style={styles.dateText}>19 de Setembro</Text>
+            <Text style={styles.dateLabel}>Hoje, {dataFormatada}</Text>
+            <Text style={styles.dateText}>{diaEMes}</Text>
           </View>
-          <StatusBadge status="Ponto em Aberto" pulse={true} />
+          <StatusBadge 
+            status={punchData.jornadaConcluida ? "Jornada Concluída" : "Ponto em Aberto"} 
+            pulse={!punchData.jornadaConcluida} 
+          />
         </View>
 
-        {/* Real-time Clock & Active Stopwatch */}
         <ContadorAtivo
           horarioEntrada={punchData.primeiroRegistro}
           initialSeconds={punchData.segundosTrabalhados}
-          isWorking={true}
+          isWorking={!!punchData.primeiroRegistro && !punchData.jornadaConcluida}
         />
 
-        {/* Central Biometric Action Button */}
         <BotaoBiometria
           onPress={handleBaterPonto}
           loading={loading}
           proximoSlotLabel={punchData.proximoSlotLabel}
           gpsLocation="SME Prédio Central"
+          disabled={punchData.jornadaConcluida}
         />
 
-        {/* Quick Action Buttons */}
-        <View style={styles.quickActionsRow}>
-          <TouchableOpacity
-            style={styles.quickActionBtn}
-            onPress={() => Alert.alert('Intervalo', 'Intervalo regulamentar de 15 minutos registrado.')}
-          >
-            <Text style={styles.quickActionIcon}>☕</Text>
-            <Text style={styles.quickActionText}>Intervalo 15m</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionBtn}
-            onPress={() => Alert.alert('Saída Antecipada', 'Lembre-se de anexar justificativa ao sair antecipadamente.')}
-          >
-            <Text style={styles.quickActionIcon}>⎋</Text>
-            <Text style={styles.quickActionText}>Saída Cedo</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Summary Progress Cards */}
-        <View style={styles.summaryGrid}>
-          {/* Card Horas Semanais */}
-          <View style={styles.summaryCard}>
-            <View style={styles.cardHeaderSmall}>
-              <Text style={styles.cardHeaderTitle}>Horas Semanais</Text>
-              <Text style={styles.cardHeaderIcon}>📅</Text>
-            </View>
-            <Text style={styles.cardBigNumber}>18h 45m</Text>
-            <Text style={styles.cardSub}>Restante p/ 30h</Text>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: '37.5%' }]} />
-            </View>
-          </View>
-
-          {/* Card Banco de Horas */}
-          <View style={styles.summaryCard}>
-            <View style={styles.cardHeaderSmall}>
-              <Text style={styles.cardHeaderTitle}>Banco de Horas</Text>
-              <Text style={styles.cardHeaderIcon}>⚖️</Text>
-            </View>
-            <Text style={[styles.cardBigNumber, { color: colors.secondary }]}>+02h 15m</Text>
-            <Text style={styles.cardSub}>Saldo positivo acumulado</Text>
-            <View style={styles.chipBanco}>
-              <Text style={styles.chipBancoText}>Regularizado</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Today's Punch Activity Timeline */}
         <View style={styles.timelineCard}>
           <View style={styles.timelineHeader}>
             <View style={styles.timelineHeaderTitleRow}>
@@ -244,7 +250,7 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
               <Text style={styles.timelineTitle}>Registros de Hoje</Text>
             </View>
             <View style={styles.timelineBadge}>
-              <Text style={styles.timelineBadgeText}>4 Batidas Previstas</Text>
+              <Text style={styles.timelineBadgeText}>Jornada 6 Horas</Text>
             </View>
           </View>
 
@@ -255,7 +261,6 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
           </View>
         </View>
 
-        {/* Institutional Notice / Supervisor Contact Footer */}
         <TouchableOpacity
           style={styles.noticeCard}
           onPress={onNavigateToJustificativa}
@@ -266,7 +271,7 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
           </View>
           <View style={styles.noticeTextCol}>
             <Text style={styles.noticeTitle}>Divergência ou Problemas com o Ponto?</Text>
-            <Text style={styles.noticeDesc}>Envie um atestado ou justificativa ao supervisor DRE</Text>
+            <Text style={styles.noticeDesc}>Envie um atestado ou justificativa ao supervisor</Text>
           </View>
           <Text style={styles.noticeArrow}>›</Text>
         </TouchableOpacity>
@@ -279,6 +284,17 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.surface
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.surface
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.onSurfaceVariant
   },
   topHeader: {
     flexDirection: 'row',
@@ -369,97 +385,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: colors.onSurface
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16
-  },
-  quickActionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainer
-  },
-  quickActionIcon: {
-    fontSize: 15
-  },
-  quickActionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.onSurface
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainer,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1
-  },
-  cardHeaderSmall: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6
-  },
-  cardHeaderTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.onSurfaceVariant
-  },
-  cardHeaderIcon: {
-    fontSize: 12
-  },
-  cardBigNumber: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.onSurface,
-    marginBottom: 2
-  },
-  cardSub: {
-    fontSize: 10,
-    color: colors.onSurfaceVariant,
-    marginBottom: 8
-  },
-  progressBarBg: {
-    height: 5,
-    backgroundColor: colors.surfaceContainer,
-    borderRadius: 9999,
-    overflow: 'hidden'
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: colors.secondary,
-    borderRadius: 9999
-  },
-  chipBanco: {
-    backgroundColor: colors.secondaryContainer,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start'
-  },
-  chipBancoText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.onSecondaryContainer
   },
   timelineCard: {
     backgroundColor: colors.surfaceContainerLowest,

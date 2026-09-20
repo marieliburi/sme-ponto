@@ -11,49 +11,46 @@ import {
   Alert
 } from 'react-native';
 import { colors } from '../theme/colors';
-import { authService } from '../services/api';
-import { bioService } from '../services/bioService';
+import { authService, setAuthToken } from '../services/api';
 
 export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
-  const [email, setEmail] = useState('lucas.ferreira@sme.edu.br');
-  const [senha, setSenha] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [bioLoading, setBioLoading] = useState(false);
 
+  // Login tradicional via API
   const handleLogin = async () => {
-    if (!email || !senha) {
+    const emailFormatado = email.trim().toLowerCase();
+
+    if (!emailFormatado || !senha) {
       Alert.alert('Campos obrigatórios', 'Por favor, informe seu e-mail e senha.');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await authService.login(email, senha);
-      if (res.success) {
-        onLoginSuccess(res.usuario);
+      const res = await authService.login(emailFormatado, senha);
+      
+      if (res && res.usuario) {
+        // Garante que o token persistirá no estado do serviço da API e armazenamento local
+        if (res.token) {
+          await setAuthToken(res.token);
+        }
+        onLoginSuccess(res.usuario, res.token);
+      } else {
+        Alert.alert('Erro', 'Resposta inválida do servidor.');
       }
     } catch (error) {
-      Alert.alert('Falha no Login', error.message || 'Credenciais inválidas.');
+      // Captura mensagens de erro de resposta do servidor ou exceções gerais de rede
+      const mensagemErro =
+        error.message ||
+        error.mensagem ||
+        'E-mail ou senha incorretos. Verifique seus dados.';
+      
+      Alert.alert('Falha no Login', mensagemErro);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBiometricLogin = async () => {
-    try {
-      setBioLoading(true);
-      const bioAuth = await bioService.autenticarBiometria();
-      if (bioAuth.sucesso) {
-        const res = await authService.biometricLogin(email);
-        if (res.success) {
-          onLoginSuccess(res.usuario);
-        }
-      }
-    } catch (error) {
-      Alert.alert('Autenticação Biométrica', error.message || 'Não foi possível validar a biometria.');
-    } finally {
-      setBioLoading(false);
     }
   };
 
@@ -91,7 +88,7 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         <View style={styles.greetingTextCol}>
           <Text style={styles.greetingTitle}>Bem-vindo de volta!</Text>
           <Text style={styles.greetingDesc}>
-            Acesse sua conta com suas credenciais institucionais para validar sua jornada diária.
+            Acesse sua conta com suas credenciais institucionais para registrar sua jornada.
           </Text>
         </View>
       </View>
@@ -105,12 +102,13 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
             <Text style={styles.inputIcon}>✉️</Text>
             <TextInput
               style={styles.input}
-              placeholder="seu.email@exemplo.com"
+              placeholder="seu.email@sme.edu.br"
               placeholderTextColor={colors.outlineVariant}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
         </View>
@@ -119,7 +117,7 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         <View style={styles.fieldGroup}>
           <View style={styles.labelRow}>
             <Text style={styles.label}>Senha</Text>
-            <TouchableOpacity onPress={() => Alert.alert('Recuperar Senha', 'Procure o supervisor da sua DRE para reset de senha.')}>
+            <TouchableOpacity onPress={() => Alert.alert('Recuperar Senha', 'Procure a administração para resetar sua senha.')}>
               <Text style={styles.forgotPassword}>Esqueceu a senha?</Text>
             </TouchableOpacity>
           </View>
@@ -141,7 +139,7 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
 
         {/* Botão Entrar */}
         <TouchableOpacity
-          style={styles.submitButton}
+          style={[styles.submitButton, loading && styles.buttonDisabled]}
           onPress={handleLogin}
           disabled={loading}
           activeOpacity={0.85}
@@ -154,30 +152,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
               <Text style={styles.submitButtonArrow}>➔</Text>
             </>
           )}
-        </TouchableOpacity>
-
-        {/* Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>ou continue com</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        {/* Botão de Biometria Digital */}
-        <TouchableOpacity
-          style={styles.biometricButton}
-          onPress={handleBiometricLogin}
-          disabled={bioLoading}
-          activeOpacity={0.85}
-        >
-          <View style={styles.bioIconBox}>
-            <Text style={styles.bioEmoji}>🖲️</Text>
-          </View>
-          <View style={styles.bioTextBox}>
-            <Text style={styles.bioTitle}>Entrar com Biometria Digital</Text>
-            <Text style={styles.bioSubtitle}>Rápido, seguro e autenticado via GPS</Text>
-          </View>
-          <Text style={styles.bioChevron}>›</Text>
         </TouchableOpacity>
 
         {/* Link Criar Conta */}
@@ -387,60 +361,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold'
   },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 10
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.surfaceContainer
-  },
-  dividerText: {
-    fontSize: 11,
-    color: colors.onSurfaceVariant,
-    marginHorizontal: 12,
-    fontWeight: '500'
-  },
-  biometricButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1.5,
-    borderColor: colors.secondaryContainer
-  },
-  bioIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12
-  },
-  bioEmoji: {
-    fontSize: 22
-  },
-  bioTextBox: {
-    flex: 1
-  },
-  bioTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.onSurface
-  },
-  bioSubtitle: {
-    fontSize: 11,
-    color: colors.onSurfaceVariant,
-    marginTop: 1
-  },
-  bioChevron: {
-    fontSize: 22,
-    color: colors.onSurfaceVariant,
-    fontWeight: '600'
+  buttonDisabled: {
+    opacity: 0.6
   },
   signupPrompt: {
     flexDirection: 'row',

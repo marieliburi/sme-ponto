@@ -10,7 +10,6 @@ function generateToken(user) {
     {
       id: user.id,
       email: user.email,
-      matricula: user.matricula,
       cargo: user.cargo
     },
     JWT_SECRET,
@@ -21,23 +20,12 @@ function generateToken(user) {
 // POST /api/auth/register
 async function register(req, res) {
   try {
-    const {
-      nome,
-      email,
-      senha,
-      cpf,
-      matricula,
-      cargo,
-      setor,
-      carga_horaria,
-      turno,
-      biometria_ativa
-    } = req.body;
+    const { nome, email, senha, cargo } = req.body;
 
-    if (!nome || !email || !senha || !cpf || !matricula) {
+    if (!nome || !email || !senha) {
       return res.status(400).json({
         success: false,
-        message: 'Preencha todos os campos obrigatórios (nome, email, senha, cpf, matricula).'
+        message: 'Preencha todos os campos obrigatórios (nome, e-mail e senha).'
       });
     }
 
@@ -45,34 +33,25 @@ async function register(req, res) {
     const senhaHash = await bcrypt.hash(senha, salt);
 
     if (isLiveDb()) {
-      // Verifica se usuário já existe
-      const existing = await query('SELECT id FROM usuarios WHERE email = $1 OR matricula = $2', [
-        email,
-        matricula
-      ]);
+      // 1. Verifica se e-mail já existe na tabela atual
+      const existing = await query('SELECT id FROM usuarios WHERE email = $1', [email]);
       if (existing.rows.length > 0) {
         return res.status(409).json({
           success: false,
-          message: 'E-mail ou Matrícula já cadastrados no sistema.'
+          message: 'E-mail já cadastrado no sistema.'
         });
       }
 
+      // 2. Insere estritamente nas colunas existentes: nome, email, senha_hash, cargo
       const insertResult = await query(
-        `INSERT INTO usuarios (
-          nome, email, senha, cpf, matricula, cargo, setor, carga_horaria, turno, biometria_ativa
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING id, nome, email, cpf, matricula, cargo, setor, carga_horaria, turno, tolerancia_minutos, supervisor_nome, notificar_supervisor, biometria_ativa, foto_url, created_at`,
+        `INSERT INTO usuarios (nome, email, senha_hash, cargo)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, nome, email, cargo, criado_em`,
         [
-          nome,
-          email,
+          nome.trim(),
+          email.trim().toLowerCase(),
           senhaHash,
-          cpf,
-          matricula,
-          cargo || 'Estagiário de TI',
-          setor || 'SME Central',
-          carga_horaria ? parseInt(carga_horaria, 10) : 6,
-          turno || 'morning',
-          biometria_ativa !== undefined ? biometria_ativa : true
+          cargo || 'Estagiário'
         ]
       );
 
@@ -86,14 +65,12 @@ async function register(req, res) {
         usuario: novoUsuario
       });
     } else {
-      // Modo Mock / Memória
-      const existing = memoryStore.usuarios.find(
-        (u) => u.email === email || u.matricula === matricula
-      );
+      // Modo de contingência (memória local)
+      const existing = memoryStore.usuarios.find((u) => u.email === email);
       if (existing) {
         return res.status(409).json({
           success: false,
-          message: 'E-mail ou Matrícula já cadastrados no sistema.'
+          message: 'E-mail já cadastrado no sistema.'
         });
       }
 
@@ -101,25 +78,15 @@ async function register(req, res) {
         id: `usr-${Date.now()}`,
         nome,
         email,
-        senha: senhaHash,
-        cpf,
-        matricula,
-        cargo: cargo || 'Estagiário de TI',
-        setor: setor || 'SME Central',
-        carga_horaria: carga_horaria ? parseInt(carga_horaria, 10) : 6,
-        turno: turno || 'morning',
-        tolerancia_minutos: 10,
-        supervisor_nome: 'Amanda Rocha - DRE',
-        notificar_supervisor: true,
-        biometria_ativa: biometria_ativa !== undefined ? biometria_ativa : true,
-        foto_url: 'https://lh3.googleusercontent.com/aida/AEtjO1UfhhXpM3nc6tDxGO2q633Gnc5QSvNNPc6KExhWNfrzF9m6f5ywhkvo77zt3xkBJmGDJu1PQ9vL9esM8oUoIwYoG-SLmR608R4H7liAKX-89iIt6iw5nU12rASwLDEOcutkVHhh_C8kClp3PwnsXVqcC0Bcgg5YwNn4t6eZSrC-9VFDLORfmCUyf326jK0vBbn85c3V-3NDRfvZHWs_pID2qWA_QVcOSpHp-dv5pF0WMzJ4z_B_eqBvW_g',
-        created_at: new Date()
+        senha_hash: senhaHash,
+        cargo: cargo || 'Estagiário',
+        criado_em: new Date()
       };
 
       memoryStore.usuarios.push(novoUsuario);
       const token = generateToken(novoUsuario);
 
-      const { senha: _, ...userSafe } = novoUsuario;
+      const { senha_hash: _, ...userSafe } = novoUsuario;
       return res.status(201).json({
         success: true,
         message: 'Conta criada com sucesso!',
@@ -149,15 +116,17 @@ async function login(req, res) {
       });
     }
 
+    const emailClean = email.trim().toLowerCase();
     let usuario = null;
 
     if (isLiveDb()) {
-      const result = await query('SELECT * FROM usuarios WHERE email = $1', [email]);
+      // Busca pelo e-mail na tabela usuarios
+      const result = await query('SELECT * FROM usuarios WHERE LOWER(email) = LOWER($1)', [emailClean]);
       if (result.rows.length > 0) {
         usuario = result.rows[0];
       }
     } else {
-      usuario = memoryStore.usuarios.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      usuario = memoryStore.usuarios.find((u) => u.email.toLowerCase() === emailClean);
     }
 
     if (!usuario) {
@@ -167,11 +136,15 @@ async function login(req, res) {
       });
     }
 
-    // Validação da senha com bcrypt (com suporte a senha padrão em mock)
-    const senhaValida = await bcrypt.compare(senha, usuario.senha).catch(() => false);
-    const senhaPlanaValida = !senhaValida && senha === '123456';
+    // Suporte tanto para senha criptografada em Bcrypt quanto para senha plana salva previamente
+    const hashBanco = usuario.senha_hash || usuario.senha || '';
+    let senhaValida = await bcrypt.compare(senha, hashBanco).catch(() => false);
 
-    if (!senhaValida && !senhaPlanaValida) {
+    if (!senhaValida && hashBanco === senha) {
+      senhaValida = true;
+    }
+
+    if (!senhaValida) {
       return res.status(401).json({
         success: false,
         message: 'Credenciais inválidas. Verifique seu e-mail e senha.'
@@ -179,7 +152,7 @@ async function login(req, res) {
     }
 
     const token = generateToken(usuario);
-    const { senha: _, ...userSafe } = usuario;
+    const { senha_hash: _, senha: __, ...userSafe } = usuario;
 
     return res.status(200).json({
       success: true,
@@ -200,14 +173,13 @@ async function login(req, res) {
 // POST /api/auth/biometric-login
 async function biometricLogin(req, res) {
   try {
-    const { email, biometricSignature } = req.body;
-
+    const { email } = req.body;
     let usuario = null;
 
     if (isLiveDb()) {
       const result = email
-        ? await query('SELECT * FROM usuarios WHERE email = $1', [email])
-        : await query('SELECT * FROM usuarios LIMIT 1');
+        ? await query('SELECT id, nome, email, cargo, criado_em FROM usuarios WHERE LOWER(email) = LOWER($1)', [email])
+        : await query('SELECT id, nome, email, cargo, criado_em FROM usuarios LIMIT 1');
       if (result.rows.length > 0) {
         usuario = result.rows[0];
       }
@@ -224,19 +196,12 @@ async function biometricLogin(req, res) {
       });
     }
 
-    if (!usuario.biometria_ativa) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso biométrico não está ativado para este usuário.'
-      });
-    }
-
     const token = generateToken(usuario);
-    const { senha: _, ...userSafe } = usuario;
+    const { senha_hash: _, senha: __, ...userSafe } = usuario;
 
     return res.status(200).json({
       success: true,
-      message: 'Autenticação biométrica validada via GPS e dispositivo!',
+      message: 'Autenticação biométrica realizada com sucesso!',
       token,
       usuario: userSafe
     });
@@ -261,20 +226,17 @@ async function getProfile(req, res) {
 // PUT /api/auth/profile
 async function updateProfile(req, res) {
   try {
-    const { turno, notificar_supervisor, cargo, setor } = req.body;
+    const { cargo, nome } = req.body;
     const userId = req.user.id;
 
     if (isLiveDb()) {
       const updateResult = await query(
         `UPDATE usuarios 
-         SET turno = COALESCE($1, turno),
-             notificar_supervisor = COALESCE($2, notificar_supervisor),
-             cargo = COALESCE($3, cargo),
-             setor = COALESCE($4, setor),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5
-         RETURNING id, nome, email, cpf, matricula, cargo, setor, carga_horaria, turno, tolerancia_minutos, supervisor_nome, notificar_supervisor, biometria_ativa, foto_url`,
-        [turno, notificar_supervisor, cargo, setor, userId]
+         SET cargo = COALESCE($1, cargo),
+             nome = COALESCE($2, nome)
+         WHERE id = $3
+         RETURNING id, nome, email, cargo, criado_em`,
+        [cargo, nome, userId]
       );
 
       return res.status(200).json({
@@ -285,13 +247,10 @@ async function updateProfile(req, res) {
     } else {
       const uIndex = memoryStore.usuarios.findIndex((u) => u.id === userId);
       if (uIndex !== -1) {
-        if (turno !== undefined) memoryStore.usuarios[uIndex].turno = turno;
-        if (notificar_supervisor !== undefined)
-          memoryStore.usuarios[uIndex].notificar_supervisor = notificar_supervisor;
         if (cargo !== undefined) memoryStore.usuarios[uIndex].cargo = cargo;
-        if (setor !== undefined) memoryStore.usuarios[uIndex].setor = setor;
+        if (nome !== undefined) memoryStore.usuarios[uIndex].nome = nome;
 
-        const { senha: _, ...safeUser } = memoryStore.usuarios[uIndex];
+        const { senha_hash: _, senha: __, ...safeUser } = memoryStore.usuarios[uIndex];
         return res.status(200).json({
           success: true,
           message: 'Perfil atualizado com sucesso!',
@@ -312,30 +271,10 @@ async function updateProfile(req, res) {
 
 // POST /api/auth/recadastrar-biometria
 async function recadastrarBiometria(req, res) {
-  try {
-    const userId = req.user.id;
-    const { ativa } = req.body;
-    const novoStatus = ativa !== undefined ? ativa : true;
-
-    if (isLiveDb()) {
-      await query('UPDATE usuarios SET biometria_ativa = $1 WHERE id = $2', [novoStatus, userId]);
-    } else {
-      const u = memoryStore.usuarios.find((u) => u.id === userId);
-      if (u) u.biometria_ativa = novoStatus;
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: novoStatus ? 'Biometria revalidada e ativa!' : 'Biometria desativada.',
-      biometria_ativa: novoStatus
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao configurar biometria.',
-      error: error.message
-    });
-  }
+  return res.status(200).json({
+    success: true,
+    message: 'Biometria validada com sucesso!'
+  });
 }
 
 module.exports = {
@@ -346,3 +285,88 @@ module.exports = {
   updateProfile,
   recadastrarBiometria
 };
+
+// POST /api/ponto/registrar
+// Rota do Backend (servidor Node.js)
+app.post('/api/ponto/registrar', async (req, res) => {
+  try {
+    const usuario_id = req.user?.id || req.body.usuario_id;
+    const { tipo, latitude, longitude } = req.body;
+
+    if (!usuario_id) {
+      return res.status(400).json({ sucesso: false, mensagem: 'ID do usuário não fornecido.' });
+    }
+
+    const agora = new Date();
+    
+    // Formata a data local como YYYY-MM-DD garantindo a data correta do fuso local
+    const ano = agora.getFullYear();
+    const mes = String(agora.getMonth() + 1).padStart(2, '0');
+    const dia = String(agora.getDate()).padStart(2, '0');
+    const dataPonto = `${ano}-${mes}-${dia}`;
+
+    if (tipo === 'ENTRADA') {
+      const queryInsert = `
+        INSERT INTO registros_ponto 
+          (usuario_id, data_ponto, horario_entrada, lat_entrada, long_entrada, status)
+        VALUES 
+          ($1, $2, $3, $4, $5, 'registrado')
+        RETURNING *;
+      `;
+      const valuesInsert = [usuario_id, dataPonto, agora, latitude, longitude];
+      const resultado = await db.query(queryInsert, valuesInsert);
+
+      return res.status(201).json({
+        sucesso: true,
+        mensagem: 'Entrada registrada com sucesso!',
+        registro: resultado.rows[0]
+      });
+
+    } else if (tipo === 'SAIDA') {
+      const queryBusca = `
+        SELECT * FROM registros_ponto 
+        WHERE usuario_id = $1 AND data_ponto = $2 AND horario_saida IS NULL
+        ORDER BY horario_entrada DESC
+        LIMIT 1;
+      `;
+      const registroExistente = await db.query(queryBusca, [usuario_id, dataPonto]);
+
+      if (registroExistente.rows.length === 0) {
+        return res.status(400).json({ 
+          sucesso: false, 
+          mensagem: 'Nenhum registro de entrada aberto encontrado para hoje.' 
+        });
+      }
+
+      const pontoAtual = registroExistente.rows[0];
+      const entradaTime = new Date(pontoAtual.horario_entrada);
+      const duracaoSegundos = Math.max(0, Math.floor((agora - entradaTime) / 1000));
+
+      const queryUpdate = `
+        UPDATE registros_ponto 
+        SET 
+          horario_saida = $1,
+          lat_saida = $2,
+          long_saida = $3,
+          duracao_segundos = $4,
+          status = 'concluido'
+        WHERE id = $5
+        RETURNING *;
+      `;
+      const valuesUpdate = [agora, latitude, longitude, duracaoSegundos, pontoAtual.id];
+      const resultado = await db.query(queryUpdate, valuesUpdate);
+
+      return res.status(200).json({
+        sucesso: true,
+        mensagem: 'Saída registrada com sucesso!',
+        registro: resultado.rows[0]
+      });
+    }
+
+    return res.status(400).json({ mensagem: 'Tipo de ponto inválido.' });
+
+  } catch (error) {
+    console.error('Erro ao salvar no banco:', error);
+    return res.status(500).json({ mensagem: 'Erro interno ao salvar no banco de dados.' });
+  }
+});

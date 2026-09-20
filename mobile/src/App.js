@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ActivityIndicator, StatusBar, StyleSheet } from 'react-native';
+// Importe o SafeAreaView de 'react-native-safe-area-context'
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from './theme/colors';
+
+// Import da API configurada no projeto
+import api from './services/api';
 
 // Telas
 import LoginScreen from './screens/LoginScreen';
@@ -14,45 +20,82 @@ import PerfilScreen from './screens/PerfilScreen';
 import BottomNav from './components/BottomNav';
 
 export default function App() {
-  // Estado de Autenticação
-  const [usuario, setUsuario] = useState({
-    id: 'usr-lucas-01',
-    nome: 'Lucas Ferreira Santos',
-    email: 'lucas.ferreira@sme.edu.br',
-    cpf: '452.891.038-12',
-    matricula: 'EST-2025-9482',
-    cargo: 'Estagiário de TI',
-    setor: 'SME Sede Central',
-    carga_horaria: 6,
-    turno: 'morning',
-    supervisor_nome: 'Amanda Rocha - DRE',
-    notificar_supervisor: true,
-    biometria_ativa: true,
-    foto_url:
-      'https://lh3.googleusercontent.com/aida/AEtjO1UfhhXpM3nc6tDxGO2q633Gnc5QSvNNPc6KExhWNfrzF9m6f5ywhkvo77zt3xkBJmGDJu1PQ9vL9esM8oUoIwYoG-SLmR608R4H7liAKX-89iIt6iw5nU12rASwLDEOcutkVHhh_C8kClp3PwnsXVqcC0Bcgg5YwNn4t6eZSrC-9VFDLORfmCUyf326jK0vBbn85c3V-3NDRfvZHWs_pID2qWA_QVcOSpHp-dv5pF0WMzJ4z_B_eqBvW_g'
-  });
+  // Inicializa sem usuário fictício e com a tela de login como primeira tela
+  const [usuario, setUsuario] = useState(null);
+  const [currentScreen, setCurrentScreen] = useState('login');
+  const [loading, setLoading] = useState(true);
 
-  // Telas públicas: 'login' | 'register'
-  // Telas autenticadas: 'home' | 'timesheet' | 'justification' | 'profile'
-  const [currentScreen, setCurrentScreen] = useState('home');
+  // Verifica se o usuário já possui token ou sessão salva ao abrir o app
+  useEffect(() => {
+    async function checarSessao() {
+      try {
+        const token = await AsyncStorage.getItem('@sme_ponto_token');
+        const userSaved = await AsyncStorage.getItem('@sme_ponto_user');
 
-  // Callbacks de autenticação
-  const handleLoginSuccess = (userLogged) => {
-    setUsuario(userLogged);
-    setCurrentScreen('home');
+        if (token && userSaved) {
+          // Define os headers das requisições futuras
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          // Opcional: Atualiza os dados mais recentes do usuário buscando na API
+          const parsedUser = JSON.parse(userSaved);
+          const response = await api.get(`/usuarios/${parsedUser.id}`);
+          
+          setUsuario(response.data || parsedUser);
+          setCurrentScreen('home');
+        }
+      } catch (error) {
+        console.warn('Sessão expirada ou não encontrada. Redirecionando para login.');
+        await AsyncStorage.multiRemove(['@sme_ponto_token', '@sme_ponto_user']);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    checarSessao();
+  }, []);
+
+  // Callbacks de autenticação chamados pelas telas de Login/Cadastro
+  const handleLoginSuccess = async (userLogged, token) => {
+    try {
+      setUsuario(userLogged);
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        await AsyncStorage.setItem('@sme_ponto_token', token);
+      }
+      await AsyncStorage.setItem('@sme_ponto_user', JSON.stringify(userLogged));
+      setCurrentScreen('home');
+    } catch (error) {
+      console.error('Erro ao salvar dados do login:', error);
+    }
   };
 
-  const handleRegisterSuccess = (newUser) => {
-    setUsuario(newUser);
-    setCurrentScreen('home');
+  const handleRegisterSuccess = (newUser, token) => {
+    handleLoginSuccess(newUser, token);
   };
 
-  const handleLogout = () => {
-    setUsuario(null);
-    setCurrentScreen('login');
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.multiRemove(['@sme_ponto_token', '@sme_ponto_user']);
+      delete api.defaults.headers.common['Authorization'];
+    } catch (error) {
+      console.error('Erro ao encerrar sessão:', error);
+    } finally {
+      setUsuario(null);
+      setCurrentScreen('login');
+    }
   };
 
-  // Se não estiver logado
+  // Tela de carregamento enquanto verifica a sessão inicial
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.loadingContainer]}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+        <ActivityIndicator size="large" color={colors.primary || '#1E293B'} />
+      </SafeAreaView>
+    );
+  }
+
+  // Se não estiver logado, renderiza telas públicas
   if (!usuario) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -85,12 +128,14 @@ export default function App() {
       case 'timesheet':
         return (
           <RelatorioScreen
+            usuario={usuario}
             onNavigateToJustificativa={() => setCurrentScreen('justification')}
           />
         );
       case 'justification':
         return (
           <AtestadoScreen
+            usuario={usuario}
             onGoBack={() => setCurrentScreen('home')}
           />
         );
@@ -99,7 +144,10 @@ export default function App() {
           <PerfilScreen
             usuario={usuario}
             onLogout={handleLogout}
-            onUpdateUsuario={(updated) => setUsuario(updated)}
+            onUpdateUsuario={async (updated) => {
+              setUsuario(updated);
+              await AsyncStorage.setItem('@sme_ponto_user', JSON.stringify(updated));
+            }}
           />
         );
       default:
@@ -131,5 +179,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center'
   }
 });

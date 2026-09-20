@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   Image,
-  Switch,
   Alert,
   ActivityIndicator
 } from 'react-native';
@@ -16,20 +15,17 @@ import { authService } from '../services/api';
 
 export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
   const [nome, setNome] = useState('');
-  const [matricula, setMatricula] = useState('');
-  const [cpf, setCpf] = useState('');
   const [email, setEmail] = useState('');
-  const [cargo, setCargo] = useState('Estagiário de TI');
-  const [setor, setSetor] = useState('SME Sede Central');
-  const [cargaHoraria, setCargaHoraria] = useState(6);
+  const [cargo, setCargo] = useState('Estagiário');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [biometriaAtiva, setBiometriaAtiva] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!nome || !matricula || !cpf || !email || !senha) {
-      Alert.alert('Campos Obrigatórios', 'Por favor, preencha todos os campos do formulário.');
+    const emailFormatado = email.trim().toLowerCase();
+
+    if (!nome.trim() || !emailFormatado || !senha) {
+      Alert.alert('Campos Obrigatórios', 'Por favor, preencha o nome, e-mail e senha.');
       return;
     }
 
@@ -40,28 +36,28 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
 
     try {
       setLoading(true);
+      // Envia apenas as colunas válidas no banco de dados
       const res = await authService.register({
-        nome,
-        matricula,
-        cpf,
-        email,
-        cargo,
-        setor,
-        carga_horaria: cargaHoraria,
-        turno: 'morning',
-        senha,
-        biometria_ativa: biometriaAtiva
+        nome: nome.trim(),
+        email: emailFormatado,
+        cargo: cargo.trim() || 'Estagiário',
+        senha
       });
 
-      if (res.success) {
+      if (res && res.success) {
         Alert.alert(
           'Conta Criada com Sucesso!',
-          'Seu cadastro institucional foi ativado com sucesso. Bem-vindo ao SME Ponto!'
+          'Seu cadastro foi realizado no sistema. Bem-vindo ao SME Ponto!'
         );
         if (onRegisterSuccess) onRegisterSuccess(res.usuario);
       }
     } catch (error) {
-      Alert.alert('Erro no Cadastro', error.message || 'Falha ao registrar usuário.');
+      const mensagemErro =
+        error.response?.data?.message ||
+        error.message ||
+        'Falha ao registrar usuário.';
+
+      Alert.alert('Erro no Cadastro', mensagemErro);
     } finally {
       setLoading(false);
     }
@@ -69,7 +65,7 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-      {/* Top Navigation Bar */}
+      {/* Barra de Navegação Superior */}
       <View style={styles.topNav}>
         <TouchableOpacity style={styles.backBtn} onPress={onGoBack} activeOpacity={0.7}>
           <Text style={styles.backBtnIcon}>‹</Text>
@@ -82,7 +78,7 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
         </View>
       </View>
 
-      {/* Header Section with Logo */}
+      {/* Cabeçalho */}
       <View style={styles.headerArea}>
         <Image
           source={{
@@ -92,38 +88,13 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
         />
         <Text style={styles.title}>Criar Conta</Text>
         <Text style={styles.subtitle}>
-          Preencha seus dados de estagiário e ative o acesso biométrico seguro.
+          Preencha seus dados para solicitar o acesso ao sistema.
         </Text>
       </View>
 
-      {/* Step Progress Indicator */}
-      <View style={styles.stepsCard}>
-        <View style={styles.stepItem}>
-          <View style={[styles.stepCircle, styles.stepCircleActive]}>
-            <Text style={styles.stepNumberActive}>1</Text>
-          </View>
-          <View>
-            <Text style={styles.stepLabel}>Dados Pessoais</Text>
-            <Text style={styles.stepSubActive}>Em preenchimento</Text>
-          </View>
-        </View>
-
-        <Text style={styles.stepArrow}>›</Text>
-
-        <View style={styles.stepItem}>
-          <View style={[styles.stepCircle, styles.stepCircleBio]}>
-            <Text style={styles.stepEmoji}>🖲️</Text>
-          </View>
-          <View>
-            <Text style={styles.stepLabel}>Biometria</Text>
-            <Text style={styles.stepSub}>Pronta p/ ativar</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Main Registration Form */}
+      {/* Formulário Simplificado */}
       <View style={styles.form}>
-        <Text style={styles.sectionHeading}>Identificação do Estagiário</Text>
+        <Text style={styles.sectionHeading}>Informações do Usuário</Text>
 
         {/* Nome Completo */}
         <View style={styles.fieldGroup}>
@@ -139,43 +110,13 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
           </View>
         </View>
 
-        {/* Matrícula & CPF Row */}
-        <View style={styles.rowTwo}>
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={styles.label}>Matrícula</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="EST-2025-9482"
-                placeholderTextColor={colors.outlineVariant}
-                value={matricula}
-                onChangeText={setMatricula}
-              />
-            </View>
-          </View>
-
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={styles.label}>CPF</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="000.000.000-00"
-                placeholderTextColor={colors.outlineVariant}
-                value={cpf}
-                onChangeText={setCpf}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-        </View>
-
         {/* E-mail */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>E-mail Institucional ou Pessoal</Text>
+          <Text style={styles.label}>E-mail</Text>
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
-              placeholder="lucas.ferreira@sme.edu.br"
+              placeholder="seu.email@sme.edu.br"
               placeholderTextColor={colors.outlineVariant}
               value={email}
               onChangeText={setEmail}
@@ -185,56 +126,17 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
           </View>
         </View>
 
-        {/* Cargo e Lotação */}
-        <View style={styles.rowTwo}>
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={styles.label}>Cargo / Função</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={cargo}
-                onChangeText={setCargo}
-                placeholder="Estagiário de TI"
-                placeholderTextColor={colors.outlineVariant}
-              />
-            </View>
-          </View>
-
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={styles.label}>Lotação / Setor</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={setor}
-                onChangeText={setSetor}
-                placeholder="SME Sede Central"
-                placeholderTextColor={colors.outlineVariant}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Carga Horária Selector */}
+        {/* Cargo / Função */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Carga Horária Regulamentar</Text>
-          <View style={styles.cargaRow}>
-            <TouchableOpacity
-              style={[styles.cargaChip, cargaHoraria === 6 && styles.cargaChipActive]}
-              onPress={() => setCargaHoraria(6)}
-            >
-              <Text style={[styles.cargaChipText, cargaHoraria === 6 && styles.cargaChipTextActive]}>
-                6 Horas / Dia (30h semanais)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.cargaChip, cargaHoraria === 4 && styles.cargaChipActive]}
-              onPress={() => setCargaHoraria(4)}
-            >
-              <Text style={[styles.cargaChipText, cargaHoraria === 4 && styles.cargaChipTextActive]}>
-                4 Horas / Dia (20h semanais)
-              </Text>
-            </TouchableOpacity>
+          <Text style={styles.label}>Cargo / Função</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={cargo}
+              onChangeText={setCargo}
+              placeholder="Ex: Estagiário de TI"
+              placeholderTextColor={colors.outlineVariant}
+            />
           </View>
         </View>
 
@@ -246,7 +148,7 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
-                placeholder="Mínimo 6 dígitos"
+                placeholder="Digite sua senha"
                 placeholderTextColor={colors.outlineVariant}
                 value={senha}
                 onChangeText={setSenha}
@@ -270,25 +172,6 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
           </View>
         </View>
 
-        {/* Card de Ativação Biométrica */}
-        <View style={styles.biometriaCard}>
-          <View style={styles.biometriaIconCircle}>
-            <Text style={styles.biometriaEmoji}>🖲️</Text>
-          </View>
-          <View style={styles.biometriaTextCol}>
-            <Text style={styles.biometriaTitle}>Ativar Biometria Digital</Text>
-            <Text style={styles.biometriaDesc}>
-              Permite validar ponto com a digital do smartphone vinculada ao GPS.
-            </Text>
-          </View>
-          <Switch
-            value={biometriaAtiva}
-            onValueChange={setBiometriaAtiva}
-            trackColor={{ false: colors.surfaceContainerHighest, true: colors.secondary }}
-            thumbColor={colors.surfaceContainerLowest}
-          />
-        </View>
-
         {/* Botão de Envio */}
         <TouchableOpacity
           style={styles.submitBtn}
@@ -300,13 +183,13 @@ export default function CriarContaScreen({ onGoBack, onRegisterSuccess }) {
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <>
-              <Text style={styles.submitBtnText}>Concluir Cadastro e Ativar Acesso</Text>
+              <Text style={styles.submitBtnText}>Concluir Cadastro</Text>
               <Text style={styles.submitBtnCheck}>✓</Text>
             </>
           )}
         </TouchableOpacity>
 
-        {/* Rodapé Fazer Login */}
+        {/* Link para Fazer Login */}
         <View style={styles.footerRow}>
           <Text style={styles.footerText}>Já possui conta? </Text>
           <TouchableOpacity onPress={onGoBack}>
@@ -374,7 +257,7 @@ const styles = StyleSheet.create({
   },
   headerArea: {
     alignItems: 'center',
-    marginBottom: 18
+    marginBottom: 20
   },
   logo: {
     width: 48,
@@ -394,61 +277,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
     lineHeight: 16
-  },
-  stepsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainer
-  },
-  stepItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  stepCircleActive: {
-    backgroundColor: colors.primary
-  },
-  stepCircleBio: {
-    backgroundColor: colors.secondaryContainer
-  },
-  stepNumberActive: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.onPrimary
-  },
-  stepEmoji: {
-    fontSize: 14
-  },
-  stepLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.onSurface
-  },
-  stepSubActive: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.secondary
-  },
-  stepSub: {
-    fontSize: 10,
-    color: colors.onSurfaceVariant
-  },
-  stepArrow: {
-    fontSize: 18,
-    color: colors.outlineVariant
   },
   form: {
     gap: 12
@@ -484,65 +312,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.onSurface
   },
-  cargaRow: {
-    gap: 8
-  },
-  cargaChip: {
-    backgroundColor: colors.surfaceContainerLow,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainer
-  },
-  cargaChipActive: {
-    backgroundColor: colors.secondaryContainer,
-    borderColor: colors.secondary
-  },
-  cargaChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.onSurfaceVariant
-  },
-  cargaChipTextActive: {
-    color: colors.onSecondaryContainer,
-    fontWeight: '700'
-  },
-  biometriaCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainer,
-    marginVertical: 4
-  },
-  biometriaIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  biometriaEmoji: {
-    fontSize: 20
-  },
-  biometriaTextCol: {
-    flex: 1
-  },
-  biometriaTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.onSurface
-  },
-  biometriaDesc: {
-    fontSize: 10,
-    color: colors.onSurfaceVariant,
-    lineHeight: 14
-  },
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -551,7 +320,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     height: 50,
     gap: 8,
-    marginTop: 6,
+    marginTop: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
