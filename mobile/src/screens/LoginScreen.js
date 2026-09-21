@@ -19,7 +19,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Login tradicional via API
   const handleLogin = async () => {
     const emailFormatado = email.trim().toLowerCase();
 
@@ -31,9 +30,8 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
     try {
       setLoading(true);
       const res = await authService.login(emailFormatado, senha);
-      
+
       if (res && res.usuario) {
-        // Garante que o token persistirá no estado do serviço da API e armazenamento local
         if (res.token) {
           await setAuthToken(res.token);
         }
@@ -42,13 +40,7 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         Alert.alert('Erro', 'Resposta inválida do servidor.');
       }
     } catch (error) {
-      // Captura mensagens de erro de resposta do servidor ou exceções gerais de rede
-      const mensagemErro =
-        error.message ||
-        error.mensagem ||
-        'E-mail ou senha incorretos. Verifique seus dados.';
-      
-      Alert.alert('Falha no Login', mensagemErro);
+      Alert.alert('Falha no Login', error.message || 'E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
     }
@@ -56,7 +48,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-      {/* Top Brand Area */}
       <View style={styles.brandArea}>
         <View style={styles.logoContainer}>
           <Image
@@ -80,7 +71,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         <Text style={styles.brandSubtitle}>Controle de Ponto do Estagiário</Text>
       </View>
 
-      {/* Welcome Greeting Card */}
       <View style={styles.greetingCard}>
         <View style={styles.greetingIconContainer}>
           <Text style={styles.greetingEmoji}>👋</Text>
@@ -93,9 +83,7 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         </View>
       </View>
 
-      {/* Login Form */}
       <View style={styles.form}>
-        {/* Email Field */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>E-mail</Text>
           <View style={styles.inputContainer}>
@@ -113,7 +101,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
           </View>
         </View>
 
-        {/* Password Field */}
         <View style={styles.fieldGroup}>
           <View style={styles.labelRow}>
             <Text style={styles.label}>Senha</Text>
@@ -137,7 +124,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
           </View>
         </View>
 
-        {/* Botão Entrar */}
         <TouchableOpacity
           style={[styles.submitButton, loading && styles.buttonDisabled]}
           onPress={handleLogin}
@@ -154,7 +140,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
           )}
         </TouchableOpacity>
 
-        {/* Link Criar Conta */}
         <View style={styles.signupPrompt}>
           <Text style={styles.signupText}>Não tem uma conta? </Text>
           <TouchableOpacity onPress={onNavigateToRegister}>
@@ -163,7 +148,6 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }) {
         </View>
       </View>
 
-      {/* Security Badge Footer */}
       <View style={styles.securityBadge}>
         <Text style={styles.secShieldIcon}>🛡️</Text>
         <Text style={styles.secBadgeText}>Ambiente Seguro SME - Versão 1.4.2</Text>
@@ -195,10 +179,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
     elevation: 2
   },
   logoImage: {
@@ -241,14 +221,12 @@ const styles = StyleSheet.create({
   deptBadgeText: {
     fontSize: 9,
     fontWeight: '700',
-    color: colors.onSurfaceVariant,
-    letterSpacing: 0.5
+    color: colors.onSurfaceVariant
   },
   brandTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: colors.onSurface,
-    letterSpacing: -0.5
+    color: colors.onSurface
   },
   brandSubtitle: {
     fontSize: 13,
@@ -345,10 +323,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     marginTop: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
     elevation: 3
   },
   submitButtonText: {

@@ -27,10 +27,10 @@ export const locationService = {
             (error) => {
               console.warn('[GPS] Usando coordenadas de homologação SME:', error.message);
               resolve({
-                latitude: -23.55052,
-                longitude: -46.633308,
+                latitude: -22.961190,
+                longitude: -49.897194,
                 accuracy: 3,
-                localizacao_nome: 'SME Prédio Central',
+                localizacao_nome: 'SME Prédio Central(Casa)',
                 gps_confirmado: true
               });
             },

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, StatusBar, StyleSheet } from 'react-native';
-// Importe o SafeAreaView de 'react-native-safe-area-context'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from './theme/colors';
 
-// Import da API configurada no projeto
-import api from './services/api';
+// Import dos serviços nativos da API (sem Axios)
+import { setAuthToken, authService } from './services/api';
 
 // Telas
 import LoginScreen from './screens/LoginScreen';
@@ -20,7 +19,6 @@ import PerfilScreen from './screens/PerfilScreen';
 import BottomNav from './components/BottomNav';
 
 export default function App() {
-  // Inicializa sem usuário fictício e com a tela de login como primeira tela
   const [usuario, setUsuario] = useState(null);
   const [currentScreen, setCurrentScreen] = useState('login');
   const [loading, setLoading] = useState(true);
@@ -33,19 +31,17 @@ export default function App() {
         const userSaved = await AsyncStorage.getItem('@sme_ponto_user');
 
         if (token && userSaved) {
-          // Define os headers das requisições futuras
-          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          // Define o token no cliente HTTP nativo
+          await setAuthToken(token);
           
-          // Opcional: Atualiza os dados mais recentes do usuário buscando na API
           const parsedUser = JSON.parse(userSaved);
-          const response = await api.get(`/usuarios/${parsedUser.id}`);
-          
-          setUsuario(response.data || parsedUser);
+          setUsuario(parsedUser);
           setCurrentScreen('home');
         }
       } catch (error) {
         console.warn('Sessão expirada ou não encontrada. Redirecionando para login.');
         await AsyncStorage.multiRemove(['@sme_ponto_token', '@sme_ponto_user']);
+        await setAuthToken(null);
       } finally {
         setLoading(false);
       }
@@ -59,10 +55,12 @@ export default function App() {
     try {
       setUsuario(userLogged);
       if (token) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        await setAuthToken(token);
         await AsyncStorage.setItem('@sme_ponto_token', token);
       }
-      await AsyncStorage.setItem('@sme_ponto_user', JSON.stringify(userLogged));
+      if (userLogged) {
+        await AsyncStorage.setItem('@sme_ponto_user', JSON.stringify(userLogged));
+      }
       setCurrentScreen('home');
     } catch (error) {
       console.error('Erro ao salvar dados do login:', error);
@@ -76,7 +74,7 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await AsyncStorage.multiRemove(['@sme_ponto_token', '@sme_ponto_user']);
-      delete api.defaults.headers.common['Authorization'];
+      await setAuthToken(null);
     } catch (error) {
       console.error('Erro ao encerrar sessão:', error);
     } finally {

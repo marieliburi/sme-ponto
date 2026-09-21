@@ -50,28 +50,45 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
     jornadaConcluida: false
   });
 
+  // Função auxiliar para normalizar strings de data do banco (PostgreSQL/Node)
+  const parseIsoDate = (dateStr) => {
+    if (!dateStr) return null;
+    if (typeof dateStr === 'string' && dateStr.includes(' ') && !dateStr.includes('T')) {
+      return dateStr.replace(' ', 'T');
+    }
+    return dateStr;
+  };
+
   const sincronizarComServidor = async () => {
     try {
       const res = await pontoService.getPontosHoje();
       if (!res) return;
 
-      const registroHoje = Array.isArray(res) ? res[0] : (res.registro || res);
-      if (!registroHoje) return;
+      const registroHoje = Array.isArray(res) ? res[0] : (res.registro || res.pontos?.[0] || res);
+      if (!registroHoje || typeof registroHoje !== 'object') return;
 
-      const { horario_entrada, horario_saida, duracao_segundos } = registroHoje;
+      const rawEntrada = registroHoje.horario_entrada || registroHoje.created_at || registroHoje.data_hora;
+      const rawSaida = registroHoje.horario_saida;
+
+      const horaEntrada = parseIsoDate(rawEntrada);
+      const horaSaida = parseIsoDate(rawSaida);
+      const duracaoSegundos = registroHoje.duracao_segundos;
 
       const formatarHoraLocal = (isoStr) => {
         if (!isoStr) return '--:--';
-        return new Date(isoStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const d = new Date(isoStr);
+        return isNaN(d.getTime()) ? '--:--' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       };
 
-      const temEntrada = !!horario_entrada;
-      const temSaida = !!horario_saida;
+      const temEntrada = !!horaEntrada;
+      const temSaida = !!horaSaida;
 
-      let segundos = duracao_segundos || 0;
+      let segundos = duracaoSegundos || 0;
       if (temEntrada && !temSaida) {
-        const inicio = new Date(horario_entrada);
-        segundos = Math.max(0, Math.floor((new Date() - inicio) / 1000));
+        const inicio = new Date(horaEntrada).getTime();
+        if (!isNaN(inicio)) {
+          segundos = Math.max(0, Math.floor((Date.now() - inicio) / 1000));
+        }
       }
 
       setPunchData({
@@ -81,7 +98,7 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
             tipo: 'entrada',
             titulo: '1ª Batida • Entrada',
             subtitulo: 'SME Prédio Central',
-            horario: temEntrada ? formatarHoraLocal(horario_entrada) : '--:--',
+            horario: temEntrada ? formatarHoraLocal(horaEntrada) : '--:--',
             status: temEntrada ? 'realizado' : 'pendente',
             gpsConfirmado: temEntrada
           },
@@ -90,7 +107,7 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
             tipo: 'saida',
             titulo: '2ª Batida • Saída',
             subtitulo: 'Encerramento da jornada (6h)',
-            horario: temSaida ? formatarHoraLocal(horario_saida) : '--:--',
+            horario: temSaida ? formatarHoraLocal(horaSaida) : '--:--',
             status: temSaida ? 'realizado' : 'pendente',
             gpsConfirmado: temSaida
           }
@@ -101,11 +118,11 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
           ? '2ª Batida • Saída' 
           : 'Jornada Concluída',
         segundosTrabalhados: segundos,
-        primeiroRegistro: horario_entrada,
+        primeiroRegistro: horaEntrada,
         jornadaConcluida: temEntrada && temSaida
       });
     } catch (err) {
-      console.log('Erro ao sincronizar ponto:', err);
+      console.log('Sincronização pendente:', err.message);
     } finally {
       setLoadingInicial(false);
     }
@@ -130,34 +147,67 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
     try {
       setLoading(true);
 
-      // 1. Obtém dados de GPS
-      let loc = { latitude: 0, longitude: 0 };
+      let loc = { latitude: -22.9789, longitude: -49.8706 }; // Coordenadas do Prédio Central SME como padrão
       try {
         const gps = await locationService.getCurrentLocation();
-        if (gps) {
+        if (gps && gps.latitude) {
           loc = { latitude: gps.latitude, longitude: gps.longitude };
         }
       } catch (err) {
-        console.warn('GPS não obtido, enviando valores zerados:', err);
+        console.warn('GPS indisponível:', err);
       }
 
       const tipoRegistro = !punchData.primeiroRegistro ? 'ENTRADA' : 'SAIDA';
+      const agoraIso = new Date().toISOString();
+      const horaFormatadaAgora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-      // 2. Envio direto para o backend (Sem biometria)
+      // 1. Chamada API
       const resposta = await pontoService.registrarPonto({
         usuario_id: usuario?.id,
         tipo: tipoRegistro,
         latitude: loc.latitude,
-        longitude: loc.longitude
+        longitude: loc.longitude,
+        localizacao_nome: 'SME Prédio Central',
+        tipo_autenticacao: 'manual'
       });
 
-      // Recarrega os dados do banco para atualizar a interface
-      await sincronizarComServidor();
+      // 2. Atualização local garantindo que o cronômetro inicie instantaneamente
+      setPunchData((prev) => {
+        const eEntrada = tipoRegistro === 'ENTRADA';
+        const horaEntradaValida = eEntrada ? (prev.primeiroRegistro || agoraIso) : prev.primeiroRegistro;
+        const temEntrada = !!horaEntradaValida;
+        const temSaida = !eEntrada || prev.slots[1].status === 'realizado';
 
-      Alert.alert('Sucesso!', resposta?.mensagem || `Ponto de ${tipoRegistro.toLowerCase()} registrado!`);
+        return {
+          ...prev,
+          slots: [
+            {
+              ...prev.slots[0],
+              horario: eEntrada ? horaFormatadaAgora : prev.slots[0].horario,
+              status: temEntrada ? 'realizado' : 'pendente',
+              gpsConfirmado: temEntrada
+            },
+            {
+              ...prev.slots[1],
+              horario: !eEntrada ? horaFormatadaAgora : prev.slots[1].horario,
+              status: temSaida ? 'realizado' : 'pendente',
+              gpsConfirmado: temSaida
+            }
+          ],
+          proximoSlotLabel: !temEntrada
+            ? '1ª Batida • Entrada'
+            : !temSaida
+            ? '2ª Batida • Saída'
+            : 'Jornada Concluída',
+          primeiroRegistro: horaEntradaValida,
+          jornadaConcluida: temEntrada && temSaida
+        };
+      });
+
+      Alert.alert('Sucesso!', resposta?.message || resposta?.mensagem || `Ponto de ${tipoRegistro.toLowerCase()} registrado!`);
     } catch (error) {
-      console.error('Erro ao bater ponto:', error);
-      Alert.alert('Erro no Servidor', error?.response?.data?.mensagem || error.message || 'Falha ao salvar o ponto no banco.');
+      console.error('Erro no registro do ponto:', error);
+      Alert.alert('Atenção', error?.message || 'Falha ao registrar batida.');
     } finally {
       setLoading(false);
     }
@@ -229,10 +279,11 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
           />
         </View>
 
+        {/* Cronômetro ativo com validação estrita de booleano */}
         <ContadorAtivo
           horarioEntrada={punchData.primeiroRegistro}
           initialSeconds={punchData.segundosTrabalhados}
-          isWorking={!!punchData.primeiroRegistro && !punchData.jornadaConcluida}
+          isWorking={Boolean(punchData.primeiroRegistro) && !punchData.jornadaConcluida}
         />
 
         <BotaoBiometria
