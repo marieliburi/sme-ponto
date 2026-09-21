@@ -62,7 +62,7 @@ async function registrarPonto(req, res) {
           locNome,
           gpsOk,
           tipo_autenticacao || 'biometria',
-          observacao || 'Batida validada biometricamente via GPS'
+          observacao || 'Batida validada via GPS'
         ]
       );
 
@@ -85,7 +85,7 @@ async function registrarPonto(req, res) {
         localizacao_nome: locNome,
         gps_confirmado: gpsOk,
         tipo_autenticacao: tipo_autenticacao || 'biometria',
-        observacao: observacao || 'Batida validada biometricamente via GPS'
+        observacao: observacao || 'Batida validada via GPS'
       };
 
       memoryStore.registros_ponto.push(novoRegistro);

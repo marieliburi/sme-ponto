@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { colors } from '../theme/colors';
 
+
 export default function BotaoBiometria({ onPress, proximoSlotLabel, loading = false, gpsLocation = 'SME Prédio Central' }) {
   const [pressed, setPressed] = useState(false);
 
   return (
     <View style={styles.container}>
-      {/* Indicador de Status GPS Superior */}
-      <View style={styles.gpsBanner}>
-        <View style={styles.pulseDot} />
-        <Text style={styles.gpsText}>GPS Ativo: {gpsLocation}</Text>
-        <Text style={styles.accuracyText}>• Precisão 3m</Text>
-      </View>
+      
 
       {/* Botão Biométrico Circular com Anéis Concêntricos */}
       <View style={styles.outerRing}>
@@ -31,7 +27,7 @@ export default function BotaoBiometria({ onPress, proximoSlotLabel, loading = fa
               <View style={styles.buttonContent}>
                 {/* Ícone de Biometria Digital */}
                 <View style={styles.fingerprintIconContainer}>
-                  <Text style={styles.fingerprintEmoji}>🖲️</Text>
+                  <Text style={styles.fingerprintEmoji}>👆</Text>
                 </View>
                 <Text style={styles.punchTitle}>BATER PONTO</Text>
                 <Text style={styles.punchSub}>
@@ -42,9 +38,6 @@ export default function BotaoBiometria({ onPress, proximoSlotLabel, loading = fa
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Dica de Toque */}
-      <Text style={styles.hintText}>Toque para registrar via Biometria e GPS</Text>
     </View>
   );
 }

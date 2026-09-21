@@ -97,16 +97,19 @@ async function registrarPonto(req, res) {
     const mes = String(agora.getMonth() + 1).padStart(2, '0');
     const dia = String(agora.getDate()).padStart(2, '0');
     const dataPonto = `${ano}-${mes}-${dia}`;
+    
+    // Texto padronizado para salvar no banco sem mencão a biometria
+    const observacaoTexto = 'Batida validada via GPS';
 
     if (String(tipo).toUpperCase() === 'ENTRADA') {
       const queryInsert = `
         INSERT INTO registros_ponto 
-          (usuario_id, data_ponto, horario_entrada, lat_entrada, long_entrada, status)
+          (usuario_id, data_ponto, horario_entrada, lat_entrada, long_entrada, status, observacao)
         VALUES 
-          ($1, $2, $3, $4, $5, 'registrado')
+          ($1, $2, $3, $4, $5, 'registrado', $6)
         RETURNING *;
       `;
-      const valuesInsert = [usuario_id, dataPonto, agora, latitude || 0, longitude || 0];
+      const valuesInsert = [usuario_id, dataPonto, agora, latitude || 0, longitude || 0, observacaoTexto];
       const resultado = await query(queryInsert, valuesInsert);
 
       return res.status(201).json({
@@ -142,11 +145,12 @@ async function registrarPonto(req, res) {
           lat_saida = $2,
           long_saida = $3,
           duracao_segundos = $4,
-          status = 'concluido'
-        WHERE id = $5
+          status = 'concluido',
+          observacao = $5
+        WHERE id = $6
         RETURNING *;
       `;
-      const valuesUpdate = [agora, latitude || 0, longitude || 0, duracaoSegundos, pontoAtual.id];
+      const valuesUpdate = [agora, latitude || 0, longitude || 0, duracaoSegundos, observacaoTexto, pontoAtual.id];
       const resultado = await query(queryUpdate, valuesUpdate);
 
       return res.status(200).json({

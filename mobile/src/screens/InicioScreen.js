@@ -171,7 +171,16 @@ export default function InicioScreen({ usuario, onNavigateToJustificativa }) {
         tipo_autenticacao: 'manual'
       });
 
-      // 2. Atualização local garantindo que o cronômetro inicie instantaneamente
+      // 2. Se o GPS estiver desligado ou sem permissão, bloqueia a batida
+    if (!loc) {
+      Alert.alert(
+        'GPS Necessário',
+        'Não foi possível obter sua localização. Ative o GPS/Localização do celular para registrar o ponto.'
+      );
+      return; // Interrompe a função aqui
+    }
+
+      // 2.1 Atualização local garantindo que o cronômetro inicie instantaneamente
       setPunchData((prev) => {
         const eEntrada = tipoRegistro === 'ENTRADA';
         const horaEntradaValida = eEntrada ? (prev.primeiroRegistro || agoraIso) : prev.primeiroRegistro;
